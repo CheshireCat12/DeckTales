@@ -13,7 +13,8 @@ from aqt.qt import (
     QWidget,
 )
 
-from api import APICaller, GeminiWorker
+from decktales.api import APICaller, GeminiWorker
+from decktales.utils import format_words, get_due_words, remove_furigana
 
 
 class DecktalesWindow(QWidget):

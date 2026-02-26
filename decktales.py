@@ -1,4 +1,3 @@
-import re
 from functools import partial
 from math import ceil
 
@@ -14,7 +13,7 @@ from aqt.qt import (
 )
 
 from decktales.api import APICaller, GeminiWorker
-from decktales.utils import format_words, get_due_words, remove_furigana
+from decktales.utils import format_words, get_due_words, parse_sections, remove_furigana
 
 
 class DecktalesWindow(QWidget):
@@ -135,11 +134,13 @@ Your entire response must consist **exactly** of the three sections below, in th
 
 Now, generate your response following the **Output Format** exactly."""
 
+            model = "gemini-3-flash-preview"
             generate_button.clicked.connect(
                 partial(
                     self.call_and_generate_text,
                     batch_words[:],
                     prompt[:],
+                    model,
                     show_hiragana,
                     editor_gen_text,
                 )
@@ -152,43 +153,18 @@ Now, generate your response following the **Output Format** exactly."""
 
         self.setLayout(layout)
 
-    def _parse_sections(self, text):
-        """Parse your ##SECTION## delimited format."""
-
-        sections = {"VAL": "", "SELECTED_WORDS": "", "THEME": "", "STORY": ""}
-
-        # Extract each section using regex
-        for section in sections.keys():
-            pattern = rf"##{section}##\s*(.*?)(?=##|$)"
-            match = re.search(pattern, text, re.DOTALL)
-            if match:
-                sections[section] = match.group(1).strip()
-
-        # Parse selected words into list of tuples
-        words = []
-        for line in sections["SELECTED_WORDS"].split("\n"):
-            line = line.strip()
-            if line:
-                # Match pattern: 景色(けしき)
-                word_match = re.match(r"^(.+?)\((.+?)\)$", line)
-                if word_match:
-                    words.append((word_match.group(1), word_match.group(2)))
-
-        sections["SELECTED_WORDS_PARSED"] = words
-
-        return sections
-
     def call_and_generate_text(
         self,
         batch_words: list[tuple[str, str]],
         prompt: str,
+        model: str,
         show_hiragana: QCheckBox,
         editor_gen_text: QTextEdit,
     ):
         kanjis = [kanji for kanji, reading in batch_words]
         # Setup thread and worker
         self.thread = QThread()
-        self.worker = GeminiWorker(self.api, kanjis, prompt)
+        self.worker = GeminiWorker(self.api, kanjis, prompt, model)
         self.worker.moveToThread(self.thread)
 
         # Connect signals
@@ -219,7 +195,7 @@ Now, generate your response following the **Output Format** exactly."""
 
     def on_generation_done(self, text, show_hiragana, editor):
         """This runs in the main thread - safe to update UI"""
-        parsed_text = self._parse_sections(text)
+        parsed_text = parse_sections(text)
         story = parsed_text["STORY"]
         if not show_hiragana.isChecked():
             story = remove_furigana(story)

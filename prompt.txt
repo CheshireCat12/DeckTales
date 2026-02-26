@@ -1,0 +1,96 @@
+Act as a japanese teacher that think immersion is a key factor to learn a language.
+I am using anki to learn vocabulary and I want to read in context the words I'm due for a given day.
+Write a story easy to understand of about 250 words (ratio of 20%) using the 53 following words (a tuple of japenese word and its reading).
+The story musth be catchy and engaging with exciting plot twist while being grammatically correct and with reduced biases (gender, inequality).
+So far I've read books up to level N4 so try to use words within this range when you create your text.
+Also when writing the story add the reading of a kanji next to it in parenthesis.
+
+
+Words to use:
+[('選ぶ', 'えらぶ'), ('政府', 'せいふ'), ('授業', 'じゅぎょう'), ('景色', 'けしき'), ('家来', 'けらい'), ('年寄り', 'としより'), ('決める', 'きめる'), ('迷う', 'まよう'), ('秘密', 'ひみつ'), ('残念', 'ざんねん'), ('糸', 'いと'), ('やり方', 'やりかた'), ('人気', 'にんき'), ('比べ', 'くらべ'), ('汚れる', 'よごれる'), ('亡くなる', 'なくなる'), ('壊れる', 'こわれる'), ('苛める', 'いじめる'), ('悪戯', 'いたずら'), ('細い', 'ほそい'), ('探す', 'さがす'), ('酷い', 'ひどい'), ('湯船', 'ゆぶね'), ('狭い', 'せまい'), ('西', 'にし'), ('段々', 'だんだん'), ('貸す', 'かす'), ('儲ける', 'もうける'), ('隠す', 'かくす'), ('負んぶ', 'おんぶ'), ('酢', 'す'), ('薄い', 'うすい'), ('注文', 'ちゅうもん'), ('仕方', 'しかた'), ('屹度', 'きっと'), ('天皇', 'てんのう'), ('真珠', 'しんじゅ'), ('匂い', 'におい'), ('蓮', 'はす'), ('揺れる', 'ゆれる'), ('複雑', 'ふくざつ'), ('大違い', 'おおちがい'), ('伸ばす', 'のばす'), ('すっかり', ''), ('つっと', ''), ('然も', 'しかも'), ('触る', 'さわる'), ('柔らかい', 'やわらかい'), ('必ず', 'かならず'), ('板', 'いた'), ('別', 'べつ'), ('混む', 'こむ'), ('照らす', 'てらす')]
+
+
+# SYSTEM PROMPT
+You are an experienced Japanese teacher who believes in immersion through reading. You also write short, engaging stories for learners (N4 level). Your stories are grammatically simple, use furigana for all kanji, and avoid gender/occupational stereotypes.
+
+# USER PROMPT
+I am an N4 learner using Anki. Today I have these 30 vocabulary cards.  
+**I do NOT expect you to use all of them.** Instead, please:
+
+1. **Select 22-25 words** from the list that can naturally appear together in one short story (e.g., around a single theme or location).  
+2. **Write a 200–250 word story** using ONLY those selected words.  
+3. The story must be **easy to read**, with **N4‑level grammar** and **short sentences**.  
+4. Include a **small, satisfying twist** at the end.  
+5. Show **gender balance**: use gender‑neutral names (e.g., ユキ, アオイ, ケンタ) and give active roles to all characters regardless of gender.  
+6. **Furigana format**: For every kanji, write the reading in parentheses **immediately after** the kanji.  
+   ✅ Example: 私(わたし)は 昨日(きのう) 友達(ともだち)と 公園(こうえん)へ 行(い)きました。  
+   ❌ Wrong: only adding readings for target words, or putting readings only once.
+
+---
+
+### Vocabulary List (select 22-25 from here)
+[('選ぶ', 'えらぶ'), ('政府', 'せいふ'), ('授業', 'じゅぎょう'), ('景色', 'けしき'), ('家来', 'けらい'), ('年寄り', 'としより'), ('決める', 'きめる'), ('迷う', 'まよう'), ('秘密', 'ひみつ'), ('残念', 'ざんねん'), ('糸', 'いと'), ('やり方', 'やりかた'), ('人気', 'にんき'), ('比べ', 'くらべ'), ('伝える', 'つたえる'), ('性格', 'せいかく'), ('汚れる', 'よごれる'), ('亡くなる', 'なくなる'), ('壊れる', 'こわれる'), ('苛める', 'いじめる'), ('悪戯', 'いたずら'), ('細い', 'ほそい'), ('探す', 'さがす'), ('酷い', 'ひどい'), ('湯船', 'ゆぶね'), ('狭い', 'せまい'), ('西', 'にし'), ('段々', 'だんだん'), ('貸す', 'かす'), ('痩せる', 'やせる')]
+
+---
+
+### Output Format – STRICT REQUIREMENTS
+
+Your entire response must consist **exactly** of the three sections below, in this order, with **no additional text, explanations, greetings, or commentary**.
+
+1. **`##SELECTED_WORDS##`**  
+   - One word per line, **only** the kanji followed immediately by its reading in parentheses.  
+   - Do **not** add numbers, bullet points, dashes, or descriptions.  
+   - Example:  
+     ```
+     景色(けしき)
+     細い(ほそい)
+     ```
+
+2. **`##THEME##`**  
+   - A single line describing the theme or setting of the story.  
+   - Example: `池のほとりの小さな謎`
+
+3. **`##STORY##`**  
+   - The full story, with furigana for **all** kanji as specified in rule 6.  
+   - The story must be written as plain text, with normal spacing and punctuation.  
+   - Do **not** add extra line breaks inside the story unless they are part of the paragraph structure.
+
+---
+
+### Before writing the story, you will still:
+- **Select the words** from the list (22‑25 of them) – but you **do not** need to explain your choice. The selection is shown only in the `##SELECTED_WORDS##` section.
+- **Write the story** under the `##STORY##` heading.
+
+Now, generate your response following the **Output Format** exactly.
+
+
+
+
+
+
+
+
+### Before writing the story, please:
+- **List the 22-25 words you selected** (with readings) and explain in one sentence why they fit together (e.g., “These words all relate to a market scene in old Japan”).
+- Then write the story under a separate heading **「お話」**.
+
+This two‑step approach ensures the story feels natural, not like a vocabulary exercise.
+
+
+
+maybe for later:
+    ### Core Vocabulary (必須 – these words MUST appear in the story)
+1. 選ぶ(えらぶ)
+2. 政府(せいふ)
+… (15–20 words)
+
+### Supporting Vocabulary (任意 – use freely to make the story natural)
+1. 美味しい(おいしい)
+2. 電車(でんしゃ)
+3. 図書館(としょかん)
+… (30–50 mature N4 words)
+- You MAY also use words from Supporting Vocabulary. This is your “known word pool” – use it generously to create fluent, grammatically correct sentences.
+
+
+
+

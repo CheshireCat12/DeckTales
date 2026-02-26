@@ -190,9 +190,7 @@ def format_words(words: list[tuple[str, str]]) -> str:
     )[:-2]
 
 
-# We're going to add a menu item below. First we want to create a function to
-# be called when the menu item is activated.
-class AnotherWindow(QWidget):
+class DecktalesWindow(QWidget):
     """
     This "window" is a QWidget. If it has no parent, it
     will appear as a free-floating window as we want.
@@ -404,15 +402,15 @@ Now, generate your response following the **Output Format** exactly."""
         editor.setHtml(story)
 
 
-def testFunction() -> None:
-    mw.w = AnotherWindow()
+def init_decktales_window() -> None:
+    mw.w = DecktalesWindow()
     mw.w.show()
 
 
 # create a new menu item, "test"
-action = QAction("window", mw)
+action = QAction("DeckTales", mw)
 # set it to call testFunction when it's clicked
-qconnect(action.triggered, testFunction)
+qconnect(action.triggered, init_decktales_window)
 # and add it to the tools menu
 mw.form.menuTools.addAction(action)
 

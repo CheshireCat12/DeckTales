@@ -1,11 +1,15 @@
 from functools import partial
 from math import ceil
 
+from aqt import Qt, mw
 from aqt.qt import (
     QCheckBox,
+    QComboBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QTabWidget,
     QTextEdit,
     QThread,
@@ -28,10 +32,12 @@ class Prompt:
     def __init__(
         self,
         vocab_level: str,
+        story_theme: str,
         scaling_factor: int,
         percentage_selection: float,
     ) -> None:
         self.vocab_level = vocab_level
+        self.story_theme = story_theme
         self.scaling_factor = scaling_factor
         self.percentage_selection = percentage_selection
 
@@ -46,7 +52,7 @@ You are an experienced Japanese teacher who believes in immersion through readin
 I am an {self.vocab_level} learner using Anki. Today I have these {len(words)} vocabulary cards.
 **I do NOT expect you to use all of them.** Instead, please:
 
-0. **Choose a fairy tail theme for an engaging story** then use this theme when you write the story.
+0. **Choose a theme for an engaging story** then use this theme when you write the story.
 1. **Select about {percent_words} words** from the list that can naturally appear together in one short story (e.g., around a single theme or location).
 2. **Write a {percent_words * self.scaling_factor} word story** using those selected words.
 3. The story must be **easy and engaging to read**, with **{self.vocab_level}‑level grammar** and **short sentences**.
@@ -104,24 +110,121 @@ class DecktalesWindow(QWidget):
 
         self.api = APICaller()
 
-        layout = QHBoxLayout()
-        self.label = QLabel("Another Window")
-        layout.addWidget(self.label)
+        self.main_layout = QHBoxLayout()
+
+        menu_container = QWidget()
+        menu_container.setMaximumWidth(300)
+        self.menu_layout = QFormLayout(menu_container)
 
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setMovable(True)
+        self.app_layout = QVBoxLayout()
 
-        deck = "Takoboto"
+        self.init_menu()
+
+        self.main_layout.addWidget(menu_container)
+        # self.main_layout.addLayout(self.menu_layout)
+        self.main_layout.addLayout(self.app_layout)
+
+        self.setLayout(self.main_layout)
+
+    def init_menu(self):
+
+        label = QLabel("Another Window")
+
+        deck_combobox = QComboBox()
+        decks = set([d.name.split("::")[0] for d in mw.col.decks.all_names_and_ids()])
+        for deck in decks:
+            deck_combobox.addItem(deck)
+
+        model_combobox = QComboBox()
+        model_combobox.addItem("Gemini 3", "gemini-3-flash-preview")
+        model_combobox.addItem("Gemini 2", "gemini-2.5-flash")
+
+        vocab_lvl_combobox = QComboBox()
+        for i in range(1, 6):
+            vocab_lvl_combobox.addItem(f"N{i}")
+
+        size_corpus_slider = QSlider(Qt.Orientation.Horizontal, self)
+        size_corpus_slider.setRange(5, 40)
+        size_corpus_slider.setValue(20)
+        size_corpus_label = QLabel(f"Size Corpus: {size_corpus_slider.value()}")
+        size_corpus_slider.valueChanged.connect(
+            lambda value: size_corpus_label.setText(f"Size Corpus: {value}")
+        )
+
+        percentage_corpus_slider = QSlider(Qt.Orientation.Horizontal, self)
+        percentage_corpus_slider.setRange(1, 100)
+        percentage_corpus_slider.setValue(90)
+        percentage_corpus_label = QLabel(
+            f"Percentage Corpus: {percentage_corpus_slider.value() / 100}"
+        )
+        percentage_corpus_slider.valueChanged.connect(
+            lambda value: percentage_corpus_label.setText(
+                f"Percentage Corpus: {percentage_corpus_slider.value() / 100}"
+            )
+        )
+
+        scaling_factor_slider = QSlider(Qt.Orientation.Horizontal, self)
+        scaling_factor_slider.setRange(1, 20)
+        scaling_factor_slider.setValue(10)
+        scaling_factor_label = QLabel(
+            f"Text Scaling Factor: {scaling_factor_slider.value()}"
+        )
+        scaling_factor_slider.valueChanged.connect(
+            lambda value: scaling_factor_label.setText(
+                f"Text Scaling Factor: {scaling_factor_slider.value()}"
+            )
+        )
+
+        apply_button = QPushButton("Apply")
+        apply_button.clicked.connect(
+            lambda x: self.init_app(
+                deck=deck_combobox.currentText(),
+                model=model_combobox.currentData(),
+                vocab_level=vocab_lvl_combobox.currentText(),
+                batch_size=size_corpus_slider.value(),
+                percentage_selection=percentage_corpus_slider.value(),
+                text_scaling_factor=scaling_factor_slider.value(),
+            )
+        )
+
+        self.menu_layout.addRow(label)
+        self.menu_layout.addRow(QLabel("Deck"))
+        self.menu_layout.addRow(deck_combobox)
+        self.menu_layout.addRow(QLabel("LLM Model"))
+        self.menu_layout.addRow(model_combobox)
+        self.menu_layout.addRow(QLabel("Level Vocabulary"))
+        self.menu_layout.addRow(vocab_lvl_combobox)
+        self.menu_layout.addRow(size_corpus_label)
+        self.menu_layout.addRow(size_corpus_slider)
+        self.menu_layout.addRow(percentage_corpus_label)
+        self.menu_layout.addRow(percentage_corpus_slider)
+        self.menu_layout.addRow(scaling_factor_label)
+        self.menu_layout.addRow(scaling_factor_slider)
+        self.menu_layout.addRow(apply_button)
+
+    def init_app(
+        self,
+        deck: str,
+        model: str,
+        vocab_level: str,
+        batch_size: int,
+        percentage_selection: float,
+        text_scaling_factor: int,
+    ):
+
+        self.tabs.deleteLater()
+
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self.tabs.setMovable(True)
+        self.app_layout.addWidget(self.tabs)
+
         due_words = get_due_words(deck=deck)
 
-        model = "gemini-3-flash-preview"
-
-        vocab_level = "N4"
-        batch_size = 15
-
-        text_scaling_factor = 14
-        percentage_selection = 0.75
+        story_theme = ""
 
         for batch_num in range(ceil(len(due_words) / batch_size)):
             batch_words = due_words[
@@ -129,6 +232,7 @@ class DecktalesWindow(QWidget):
             ]
             new_prompt = Prompt(
                 vocab_level=vocab_level,
+                story_theme=story_theme,
                 scaling_factor=text_scaling_factor,
                 percentage_selection=percentage_selection,
             )
@@ -173,10 +277,6 @@ class DecktalesWindow(QWidget):
 
             current_tab.setLayout(layout_tab)
             self.tabs.addTab(current_tab, f"{batch_num}")
-
-        layout.addWidget(self.tabs)
-
-        self.setLayout(layout)
 
     def call_and_generate_text(
         self,

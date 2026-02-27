@@ -255,8 +255,8 @@ class AnotherWindow(QWidget):
 
             layout_tab.addWidget(editor_gen_text)
 
-            batch_low_percent = int(len(batch_words) * 0.7) + 1
-            batch_up_percent = int(len(batch_words) * 0.8) + 1
+            batch_low_percent = int(len(batch_words) * 0.95) + 1
+            batch_up_percent = int(len(batch_words) * 1.0)
             text_scaling_factor = 14
             prompt = f"""# SYSTEM PROMPT
 You are an experienced Japanese teacher who believes in immersion through reading. You also write short, engaging stories for learners ({vocab_level} level). Your stories are grammatically simple, use furigana for all kanji, and avoid gender/occupational stereotypes.

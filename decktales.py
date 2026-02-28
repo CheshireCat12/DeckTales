@@ -2,6 +2,7 @@ from functools import partial
 from math import ceil
 
 from aqt import Qt, mw
+from aqt.operations import QueryOp
 from aqt.qt import (
     QAbstractItemView,
     QCheckBox,
@@ -16,12 +17,11 @@ from aqt.qt import (
     QSlider,
     QTabWidget,
     QTextEdit,
-    QThread,
     QVBoxLayout,
     QWidget,
 )
 
-from decktales.api import APICaller, GeminiWorker
+from decktales.api import APICaller
 from decktales.utils import format_words, get_due_words, parse_sections, remove_furigana
 
 EDITOR_SETTING = """
@@ -367,25 +367,20 @@ class DecktalesWindow(QWidget):
     ):
         kanjis = [kanji for kanji, reading in batch_words]
 
-        # Setup thread and worker
-        self.thread = QThread()
-        self.worker = GeminiWorker(self.api, kanjis, prompt, model)
-        self.worker.moveToThread(self.thread)
-
-        # Connect signals
-        self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(
-            lambda text: self.on_generation_done(text, show_hiragana, editor_gen_text)
+        op = QueryOp(
+            parent=self,
+            op=lambda col: self.api.call(batch_words, prompt, model),
+            success=lambda text: self.on_generation_done(
+                text, show_hiragana, editor_gen_text
+            ),
         )
-        self.worker.error.connect(
-            lambda err: self.on_generation_error(err, show_hiragana, editor_gen_text)
+        op.failure(
+            failure=lambda err: self.on_generation_error(
+                err, show_hiragana, editor_gen_text
+            )
         )
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
 
-        # Start the thread
-        self.thread.start()
+        op.with_progress().run_in_background()
 
     def on_generation_done(self, text, show_hiragana, editor):
         """This runs in the main thread - safe to update UI"""

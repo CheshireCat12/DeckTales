@@ -2,7 +2,7 @@ import re
 
 from aqt import mw
 
-DEBUG = False
+DEBUG = True
 
 
 def remove_furigana(text: str) -> str:

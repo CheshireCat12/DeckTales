@@ -79,7 +79,7 @@ class APICaller:
 
                 ユキはそれが酷い(ひどい)悪戯(いたずら)ではなかったことにホッとしました。橋(はし)が壊れる(こわれる)のは残念(ざんねん)ですが、原因(げんいん)はただの競争(きょうそう)でした。"""
                 self.cach_data[words_hash] = output
-                sleep(10)
+                sleep(3)
             else:
                 print("API call")
 

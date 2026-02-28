@@ -79,6 +79,47 @@ class MultiSelectDialog(QDialog):
         return []
 
 
+class PromptDialog(QDialog):
+    def __init__(self, prompt: str):
+        super().__init__()
+
+        self.prompt = prompt
+
+        self.setWindowTitle("Prompt")
+
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+        layout = QVBoxLayout()
+
+        self.message = QTextEdit()
+        self.message.setStyleSheet(EDITOR_SETTING)
+        self.message.setPlainText(self.prompt)
+
+        layout.addWidget(self.message)
+        layout.addWidget(self.buttonBox)
+        self.setLayout(layout)
+
+    def get_prompt(self) -> str:
+        return self.message.toPlainText()
+
+    @staticmethod
+    def get_items(prompt: str) -> str:
+        """
+        Convenience static method: create, show, and return prompt.
+        Returns a modify prompt strings (unchanged if cancelled).
+        """
+        dialog = PromptDialog(prompt=prompt)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return dialog.get_prompt()
+        return prompt
+
+
 class Prompt:
     def __init__(
         self,
@@ -158,8 +199,6 @@ class DecktalesWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-
-        self.api = APICaller()
 
         self.main_layout = QHBoxLayout()
 
@@ -301,23 +340,29 @@ class DecktalesWindow(QWidget):
         self.tabs.setMovable(True)
         self.app_layout.addWidget(self.tabs)
 
+        api = APICaller()
+
         due_words = get_due_words(deck=deck)
 
         story_theme = ""
 
+        gen_prompt = Prompt(
+            vocab_level=vocab_level,
+            story_theme=story_theme,
+            scaling_factor=text_scaling_factor,
+            percentage_selection=percentage_selection,
+        )
+
+        batch_words = []
+        prompts = []
+
         for batch_num in range(ceil(len(due_words) / batch_size)):
-            batch_words = due_words[
+            current_batch_words = due_words[
                 batch_num * batch_size : (batch_num + 1) * batch_size
             ]
-            new_prompt = Prompt(
-                vocab_level=vocab_level,
-                story_theme=story_theme,
-                scaling_factor=text_scaling_factor,
-                percentage_selection=percentage_selection,
-            )
-            prompt = new_prompt.generate(words=batch_words)
+            batch_words.append(current_batch_words)
 
-            formatted_words = format_words(batch_words)
+            prompts.append(gen_prompt.generate(words=current_batch_words))
 
             current_tab = QWidget()
             layout_tab = QVBoxLayout()
@@ -326,9 +371,23 @@ class DecktalesWindow(QWidget):
             editor.setStyleSheet(EDITOR_SETTING)
             editor.setReadOnly(True)
             editor.setFixedHeight(200)
-            editor.setHtml(formatted_words)
+            editor.setHtml(format_words(current_batch_words))
 
             show_hiragana = QCheckBox("Show Hiragana")
+
+            prompt_button = QPushButton(f"Verify prompt {batch_num}")
+
+            def create_prompt_diag(idx_prompt: int, prompts: list[str]) -> None:
+                modified_prompt = PromptDialog.get_items(prompt=prompts[idx_prompt])
+                prompts[idx_prompt] = modified_prompt
+
+            prompt_button.clicked.connect(
+                partial(
+                    create_prompt_diag,
+                    batch_num,
+                    prompts,
+                )
+            )
 
             generate_button = QPushButton(f"Generate {batch_num}")
 
@@ -336,40 +395,47 @@ class DecktalesWindow(QWidget):
             editor_gen_text.setStyleSheet(EDITOR_SETTING)
             editor_gen_text.setReadOnly(True)
 
+            generate_button.clicked.connect(
+                partial(
+                    self.call_and_generate_text,
+                    batch_num,
+                    batch_words,
+                    prompts,
+                    model,
+                    show_hiragana,
+                    editor_gen_text,
+                    api,
+                )
+            )
+
             layout_tab.addWidget(QLabel(f"words {batch_num}"))
             layout_tab.addWidget(editor)
             layout_tab.addWidget(QLabel("Generated text:"))
             layout_tab.addWidget(show_hiragana)
+            layout_tab.addWidget(prompt_button)
             layout_tab.addWidget(generate_button)
             layout_tab.addWidget(editor_gen_text)
-
-            generate_button.clicked.connect(
-                partial(
-                    self.call_and_generate_text,
-                    batch_words[:],
-                    prompt[:],
-                    model,
-                    show_hiragana,
-                    editor_gen_text,
-                )
-            )
 
             current_tab.setLayout(layout_tab)
             self.tabs.addTab(current_tab, f"{batch_num}")
 
     def call_and_generate_text(
         self,
-        batch_words: list[tuple[str, str]],
-        prompt: str,
+        idx_batch: int,
+        batch_words: list[list[tuple[str, str]]],
+        prompts: list[str],
         model: str,
         show_hiragana: QCheckBox,
         editor_gen_text: QTextEdit,
-    ):
-        kanjis = [kanji for kanji, reading in batch_words]
+        api: APICaller,
+    ) -> None:
+        words = batch_words[idx_batch]
+        prompt = prompts[idx_batch]
+        kanjis = [kanji for kanji, reading in words]
 
         op = QueryOp(
             parent=self,
-            op=lambda col: self.api.call(batch_words, prompt, model),
+            op=lambda col: api.call(kanjis, prompt, model),
             success=lambda text: self.on_generation_done(
                 text, show_hiragana, editor_gen_text
             ),

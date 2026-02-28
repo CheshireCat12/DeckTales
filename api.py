@@ -3,10 +3,6 @@ import sys
 from time import sleep
 
 # import all of the Qt GUI library
-from aqt.qt import (
-    QObject,
-    pyqtSignal,
-)
 
 # Add the 'vendor' folder to Python's search path
 addon_dir = os.path.dirname(__file__)
@@ -23,28 +19,6 @@ from google import genai
 from google.genai import types
 
 from decktales.utils import DEBUG
-
-
-class GeminiWorker(QObject):
-    finished = pyqtSignal(str)  # Signal with the generated story
-    error = pyqtSignal(str)  # Signal for errors
-
-    def __init__(self, api, batch_words, prompt, model):
-        super().__init__()
-        self.api = api
-        self.batch_words = batch_words
-        self.prompt = prompt
-        self.model = model
-
-    def run(self):
-        """This runs in the background thread"""
-        try:
-            # Your existing API call
-            generated_text = self.api.call(self.batch_words, self.prompt, self.model)
-            self.finished.emit(generated_text)
-        except Exception as e:
-            self.error.emit(str(e))
-
 
 # model = "gemini-3-flash-preview"
 # model = "gemini-2.5-flash"

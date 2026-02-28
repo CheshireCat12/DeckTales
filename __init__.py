@@ -18,5 +18,5 @@ def init_decktales_window() -> None:
 action = QAction("DeckTales", mw)
 # set it to call init_decktales_window when it's clicked
 qconnect(action.triggered, init_decktales_window)
-# and add it to the tools menu
-mw.form.menuTools.addAction(action)
+# and add it to the menu
+mw.form.menubar.addAction(action)

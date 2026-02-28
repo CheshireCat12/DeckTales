@@ -189,10 +189,11 @@ class DecktalesWindow(QWidget):
         decks = set([d.name.split("::")[0] for d in mw.col.decks.all_names_and_ids()])
         for deck in decks:
             deck_combobox.addItem(deck)
-
         deck_combobox.setCurrentIndex(-1)
 
-        def create_diag(deck):
+        selected_keys_label = QLabel(f"Selected Keys: {', '.join(self.selected_keys)}")
+
+        def create_diag(deck, label):
             id = mw.col.find_cards(f"deck:{deck}")[0]
 
             card = mw.col.get_card(id)
@@ -209,14 +210,10 @@ class DecktalesWindow(QWidget):
                 # If nothing selected, maybe keep previous or set default
                 self.selected_keys = [list(note.keys())[0]]  # safe default
 
-            self.selected_keys_label.setText(
-                f"Selected Keys: {', '.join(self.selected_keys)}"
-            )
+            label.setText(f"Selected Keys: {', '.join(self.selected_keys)}")
 
-        deck_combobox.currentTextChanged.connect(create_diag)
-
-        self.selected_keys_label = QLabel(
-            f"Selected Keys: {', '.join(self.selected_keys)}"
+        deck_combobox.currentTextChanged.connect(
+            lambda deck: create_diag(deck, selected_keys_label)
         )
 
         model_combobox = QComboBox()
@@ -274,7 +271,7 @@ class DecktalesWindow(QWidget):
         self.menu_layout.addRow(label)
         self.menu_layout.addRow(QLabel("Deck"))
         self.menu_layout.addRow(deck_combobox)
-        self.menu_layout.addRow(self.selected_keys_label)
+        self.menu_layout.addRow(selected_keys_label)
         self.menu_layout.addRow(QLabel("LLM Model"))
         self.menu_layout.addRow(model_combobox)
         self.menu_layout.addRow(QLabel("Level Vocabulary"))

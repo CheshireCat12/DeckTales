@@ -11,81 +11,43 @@ def remove_furigana(text: str) -> str:
 
 
 def clean_pitch(word: str) -> str:
+    """Remove the pitch accent symbols."""
     cleaned_word = re.sub(r"[ꜛꜜ]", "", word)
 
     return cleaned_word
 
 
-def get_due_words(deck: str) -> list[tuple[str, str]]:
-    ids = mw.col.find_cards(f"deck:{deck} is:due")
+def get_due_words(deck_name: str, field_names: list[str]) -> list[tuple[str, str]]:
+    """
+    Retrieve all due cards from a deck and return the processed content of specified fields.
+
+    For each due card in the given deck, the corresponding note is fetched and the values
+    of the fields listed in `field_names` are extracted, cleaned with `clean_pitch()`,
+    and returned as a tuple. The result is a list of such tuples (one per due card).
+
+    Args:
+        deck_name: Name of the deck (including subdecks automatically via Anki's search syntax).
+        field_names: List of field names (e.g., ["Front", "Back"]) whose content should be returned.
+
+    Returns:
+        A list of tuples, where each tuple contains the cleaned values of the requested fields
+        for a single due card, in the same order as `field_names`.
+
+    Example:
+        >>> get_due_words("Japanese::Vocabulary", ["Expression", "Reading"])
+        [("勉強", "べんきょう"), ("食べる", "たべる")]
+    """
+    # Search for all due cards in the deck (including subdecks)
+    card_ids = mw.col.find_cards(f'"deck:{deck_name}" is:due')
 
     due_words = []
-    for id in ids:
-        card = mw.col.get_card(id)
+    for cid in card_ids:
+        card = mw.col.get_card(cid)
         note = mw.col.get_note(card.nid)
 
-        current_word = []
-        for key, value in note.items():
-            if key in ["Japanese", "Reading"]:  # , "Meaning"]:
-                current_word.append(clean_pitch(value))
+        # Extract requested fields and clean them
+        current_word = [clean_pitch(note[field]) for field in field_names]
         due_words.append(tuple(current_word))
-
-    if DEBUG:
-        due_words = [
-            ("選ぶ", "えらぶ"),
-            ("政府", "せいふ"),
-            ("授業", "じゅぎょう"),
-            ("景色", "けしき"),
-            ("家来", "けらい"),
-            ("年寄り", "としより"),
-            ("決める", "きめる"),
-            ("迷う", "まよう"),
-            ("秘密", "ひみつ"),
-            ("残念", "ざんねん"),
-            ("糸", "いと"),
-            ("やり方", "やりかた"),
-            ("人気", "にんき"),
-            ("比べ", "くらべ"),
-            ("汚れる", "よごれる"),
-            ("亡くなる", "なくなる"),
-            ("壊れる", "こわれる"),
-            ("苛める", "いじめる"),
-            ("悪戯", "いたずら"),
-            ("細い", "ほそい"),
-            ("探す", "さがす"),
-            ("酷い", "ひどい"),
-            ("湯船", "ゆぶね"),
-            ("狭い", "せまい"),
-            ("西", "にし"),
-            ("段々", "だんだん"),
-            ("貸す", "かす"),
-            ("儲ける", "もうける"),
-            ("隠す", "かくす"),
-            ("負んぶ", "おんぶ"),
-            ("酢", "す"),
-            ("薄い", "うすい"),
-            ("注文", "ちゅうもん"),
-            ("仕方", "しかた"),
-            ("屹度", "きっと"),
-            ("天皇", "てんのう"),
-            ("真珠", "しんじゅ"),
-            ("匂い", "におい"),
-            ("蓮", "はす"),
-            ("揺れる", "ゆれる"),
-            ("複雑", "ふくざつ"),
-            ("大違い", "おおちがい"),
-            ("伸ばす", "のばす"),
-            ("すっかり", ""),
-            ("つっと", ""),
-            ("然も", "しかも"),
-            ("触る", "さわる"),
-            ("柔らかい", "やわらかい"),
-            ("必ず", "かならず"),
-            ("板", "いた"),
-            ("別", "べつ"),
-            ("混む", "こむ"),
-            ("照らす", "てらす"),
-        ]
 
     return due_words
 
@@ -97,10 +59,16 @@ def format_words(words: list[tuple[str, str]]) -> str:
     )[:-2]
 
 
-def parse_sections(text):
+def parse_sections(text: str) -> dict:
     """Parse your ##SECTION## delimited format."""
 
-    sections = {"VAL": "", "SELECTED_WORDS": "", "THEME": "", "STORY": ""}
+    sections = {
+        "VAL": "",
+        "SELECTED_WORDS": "",
+        "THEME": "",
+        "STORY": "",
+        "SELECTED_WORDS_PARSED": [],
+    }
 
     # Extract each section using regex
     for section in sections.keys():

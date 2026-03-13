@@ -221,8 +221,8 @@ class DecktalesWindow(QWidget):
 
     def init_menu(self):
 
-        label = QLabel("Another Window")
-        self.selected_keys = []
+        label = QLabel("Settings")
+        self.deck_keys = []
 
         deck_combobox = QComboBox()
         decks = set([d.name.split("::")[0] for d in mw.col.decks.all_names_and_ids()])
@@ -230,10 +230,12 @@ class DecktalesWindow(QWidget):
             deck_combobox.addItem(deck)
         deck_combobox.setCurrentIndex(-1)
 
-        selected_keys_label = QLabel(f"Selected Keys: {', '.join(self.selected_keys)}")
+        selected_keys_label = QLabel(f"Selected Keys: {', '.join(self.deck_keys)}")
 
         def create_diag(deck, label):
-            id = mw.col.find_cards(f"deck:{deck}")[0]
+
+            query = f'"deck:{deck}"'
+            id = mw.col.find_cards(query=query)[0]
 
             card = mw.col.get_card(id)
             note = mw.col.get_note(card.nid)
@@ -244,12 +246,12 @@ class DecktalesWindow(QWidget):
             )
 
             if selected:
-                self.selected_keys = selected  # store the result
+                self.deck_keys = selected  # store the result
             else:
                 # If nothing selected, maybe keep previous or set default
-                self.selected_keys = [list(note.keys())[0]]  # safe default
+                self.deck_keys = [list(note.keys())[0]]  # safe default
 
-            label.setText(f"Selected Keys: {', '.join(self.selected_keys)}")
+            label.setText(f"Selected Keys: {', '.join(self.deck_keys)}")
 
         deck_combobox.currentTextChanged.connect(
             lambda deck: create_diag(deck, selected_keys_label)
@@ -299,7 +301,8 @@ class DecktalesWindow(QWidget):
         apply_button = QPushButton("Apply")
         apply_button.clicked.connect(
             lambda x: self.init_app(
-                deck=deck_combobox.currentText(),
+                deck_name=deck_combobox.currentText(),
+                deck_keys=self.deck_keys,
                 model=model_combobox.currentData(),
                 vocab_level=vocab_lvl_combobox.currentText(),
                 batch_size=size_corpus_slider.value(),
@@ -326,7 +329,8 @@ class DecktalesWindow(QWidget):
 
     def init_app(
         self,
-        deck: str,
+        deck_name: str,
+        deck_keys: list[str],
         model: str,
         vocab_level: str,
         batch_size: int,
@@ -343,7 +347,7 @@ class DecktalesWindow(QWidget):
 
         api = APICaller()
 
-        due_words = get_due_words(deck=deck)
+        due_words = get_due_words(deck_name=deck_name, field_names=deck_keys)
 
         story_theme = ""
 

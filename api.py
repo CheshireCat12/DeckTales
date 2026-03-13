@@ -20,10 +20,6 @@ from google.genai import types
 
 from decktales.utils import DEBUG
 
-# model = "gemini-3-flash-preview"
-# model = "gemini-2.5-flash"
-# model = "gemini-2.5-flash-preview-09-2025"
-
 
 class APICaller:
     def __init__(self):

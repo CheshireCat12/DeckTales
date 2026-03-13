@@ -1,6 +1,15 @@
 import re
 
 from aqt import mw
+from aqt.qt import (
+    QAbstractItemView,
+    QDialog,
+    QDialogButtonBox,
+    QListWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 DEBUG = False
 
@@ -90,3 +99,96 @@ def parse_sections(text: str) -> dict:
     sections["SELECTED_WORDS_PARSED"] = words
 
     return sections
+
+
+###########################
+## QT Dialog
+###########################
+
+
+class MultiSelectDialog(QDialog):
+    """
+    A dialog that displays a list of items and allows multiple selections.
+    Returns a list of selected strings when accepted.
+    """
+
+    def __init__(self, items, title="Select Items", parent: QWidget = None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)  # Block interaction with parent window
+        self.resize(300, 400)
+
+        # Main layout
+        layout = QVBoxLayout(self)
+
+        # List widget with multi‑selection enabled
+        self.list_widget = QListWidget()
+        self.list_widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.MultiSelection
+        )
+        self.list_widget.addItems(items)
+        layout.addWidget(self.list_widget)
+
+        # OK / Cancel buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def get_selected_items(self):
+        """Return the text of all selected items."""
+        return [item.text() for item in self.list_widget.selectedItems()]
+
+    @staticmethod
+    def get_items(items, title="Select Items", parent=None):
+        """
+        Convenience static method: create, show, and return selected items.
+        Returns a list of strings (empty if cancelled).
+        """
+        dialog = MultiSelectDialog(items, title, parent)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return dialog.get_selected_items()
+        return []
+
+
+class PromptDialog(QDialog):
+    def __init__(self, prompt: str):
+        super().__init__()
+
+        self.prompt = prompt
+
+        self.setWindowTitle("Prompt")
+
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+        layout = QVBoxLayout()
+
+        self.message = QTextEdit()
+        self.message.setStyleSheet(EDITOR_SETTING)
+        self.message.setPlainText(self.prompt)
+
+        layout.addWidget(self.message)
+        layout.addWidget(self.buttonBox)
+        self.setLayout(layout)
+
+    def get_prompt(self) -> str:
+        return self.message.toPlainText()
+
+    @staticmethod
+    def get_items(prompt: str) -> str:
+        """
+        Convenience static method: create, show, and return prompt.
+        Returns a modify prompt strings (unchanged if cancelled).
+        """
+        dialog = PromptDialog(prompt=prompt)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return dialog.get_prompt()
+        return prompt

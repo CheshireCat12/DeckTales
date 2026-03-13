@@ -4,15 +4,11 @@ from math import ceil
 from aqt import Qt, mw
 from aqt.operations import QueryOp
 from aqt.qt import (
-    QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QPushButton,
     QSlider,
     QTabWidget,
@@ -22,7 +18,15 @@ from aqt.qt import (
 )
 
 from decktales.api import APICaller
-from decktales.utils import format_words, get_due_words, parse_sections, remove_furigana
+from decktales.prompt import PromptGenerator
+from decktales.utils import (
+    MultiSelectDialog,
+    PromptDialog,
+    format_words,
+    get_due_words,
+    parse_sections,
+    remove_furigana,
+)
 
 EDITOR_SETTING = """
     QTextEdit {
@@ -32,494 +36,409 @@ EDITOR_SETTING = """
 """
 
 
-class MultiSelectDialog(QDialog):
-    """
-    A dialog that displays a list of items and allows multiple selections.
-    Returns a list of selected strings when accepted.
-    """
-
-    def __init__(self, items, title="Select Items", parent: QWidget = None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setModal(True)  # Block interaction with parent window
-        self.resize(300, 400)
-
-        # Main layout
-        layout = QVBoxLayout(self)
-
-        # List widget with multi‑selection enabled
-        self.list_widget = QListWidget()
-        self.list_widget.setSelectionMode(
-            QAbstractItemView.SelectionMode.MultiSelection
-        )
-        self.list_widget.addItems(items)
-        layout.addWidget(self.list_widget)
-
-        # OK / Cancel buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
-
-    def get_selected_items(self):
-        """Return the text of all selected items."""
-        return [item.text() for item in self.list_widget.selectedItems()]
-
-    @staticmethod
-    def get_items(items, title="Select Items", parent=None):
-        """
-        Convenience static method: create, show, and return selected items.
-        Returns a list of strings (empty if cancelled).
-        """
-        dialog = MultiSelectDialog(items, title, parent)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            return dialog.get_selected_items()
-        return []
-
-
-class PromptDialog(QDialog):
-    def __init__(self, prompt: str):
-        super().__init__()
-
-        self.prompt = prompt
-
-        self.setWindowTitle("Prompt")
-
-        QBtn = (
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-
-        self.buttonBox = QDialogButtonBox(QBtn)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-
-        layout = QVBoxLayout()
-
-        self.message = QTextEdit()
-        self.message.setStyleSheet(EDITOR_SETTING)
-        self.message.setPlainText(self.prompt)
-
-        layout.addWidget(self.message)
-        layout.addWidget(self.buttonBox)
-        self.setLayout(layout)
-
-    def get_prompt(self) -> str:
-        return self.message.toPlainText()
-
-    @staticmethod
-    def get_items(prompt: str) -> str:
-        """
-        Convenience static method: create, show, and return prompt.
-        Returns a modify prompt strings (unchanged if cancelled).
-        """
-        dialog = PromptDialog(prompt=prompt)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            return dialog.get_prompt()
-        return prompt
-
-
-class Prompt:
-    def __init__(
-        self,
-        vocab_level: str,
-        story_theme: str,
-        scaling_factor: int,
-        percentage_selection: float,
-    ) -> None:
-        self.vocab_level = vocab_level
-        self.story_theme = story_theme
-        self.scaling_factor = scaling_factor
-        self.percentage_selection = percentage_selection
-
-    def generate(self, words: list) -> str:
-
-        percent_words = max(int(len(words) * self.percentage_selection), 1)
-
-        prompt = f"""# SYSTEM PROMPT
-You are an experienced Japanese teacher who believes in immersion through reading. You also write short, engaging stories for learners ({self.vocab_level} level). Your stories are grammatically simple, use furigana for all kanji, and avoid gender/occupational stereotypes.
-
-# USER PROMPT
-I am an {self.vocab_level} learner using Anki. Today I have these {len(words)} vocabulary cards.
-**I do NOT expect you to use all of them.** Instead, please:
-
-0. **Choose a theme for an engaging story** then use this theme when you write the story.
-1. **Select about {percent_words} words** from the list that can naturally appear together in one short story (e.g., around a single theme or location).
-2. **Write a {len(words) * self.scaling_factor} word story** using those selected words.
-3. The story must be **easy and engaging to read**, with **{self.vocab_level}‑level grammar** and **short sentences**.
-4. Use the writing style of graded books such as tadoku graded books, satory reader and genki japanese reader.
-5. **Furigana format**: For every kanji, write the reading in parentheses **immediately after** the kanji.
-✅ Example: 私(わたし)は 昨日(きのう) 友達(ともだち)と 公園(こうえん)へ 行(い)きました。
-❌ Wrong: only adding readings for target words, or putting readings only once.
-
----
-
-### Vocabulary List (select about {percent_words} from here)
-{words[:]}
----
-
-### Output Format – STRICT REQUIREMENTS
-
-Your entire response must consist **exactly** of the three sections below, in this order, with **no additional text, explanations, greetings, or commentary**.
-
-1. **`##SELECTED_WORDS##`**
-- One word per line, **only** the kanji followed immediately by its reading in parentheses.
-- Do **not** add numbers, bullet points, dashes, or descriptions.
-- Example:
- ```
- 景色(けしき)
- 細い(ほそい)
- ```
-
-2. **`##THEME##`**
-- A single line describing the theme or setting of the story.
-- Example: `池のほとりの小さな謎`
-
-3. **`##STORY##`**
-- The full story, with furigana for **all** kanji as specified in rule 5.
-- The story must be written as plain text, with normal spacing and punctuation.
-- Do **not** add extra line breaks inside the story unless they are part of the paragraph structure.
-
----
-
-### Before writing the story, you will still:
-- **Select the words** from the list ({percent_words} of them) – but you **do not** need to explain your choice. The selection is shown only in the `##SELECTED_WORDS##` section.
-- **Write the story** under the `##STORY##` heading.
-
-Now, generate your response following the **Output Format** exactly."""
-        return prompt
-
-
 class DecktalesWindow(QWidget):
     """
-    This "window" is a QWidget. If it has no parent, it
-    will appear as a free-floating window as we want.
+    Main window for the Decktales Anki add‑on.
+
+    Provides a settings panel (left) to select a deck, fields, model, and generation parameters.
+    After clicking "Apply", it creates a tab for each batch of due cards, where each tab
+    displays the vocabulary and a button to generate a story via an AI model.
     """
 
     def __init__(self):
         super().__init__()
 
+        # Main horizontal layout: menu (left) + tab area (right)
         self.main_layout = QHBoxLayout()
 
+        # Left panel – settings menu (fixed width)
         menu_container = QWidget()
         menu_container.setMaximumWidth(300)
         self.menu_layout = QFormLayout(menu_container)
 
+        # Right area – tab widget for batches
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setMovable(True)
+
+        # Layout that holds the tabs (will be populated later)
         self.app_layout = QVBoxLayout()
 
-        self.init_menu()
+        # Build the settings menu
+        self._init_menu()
 
+        # Assemble main layout
         self.main_layout.addWidget(menu_container)
-        # self.main_layout.addLayout(self.menu_layout)
         self.main_layout.addLayout(self.app_layout)
 
         self.setLayout(self.main_layout)
 
-    def init_menu(self):
+    def _init_menu(self):
+        """
+        Create and arrange all control widgets in the left settings panel.
+        Includes deck selection, field selection, model, vocabulary level, and sliders.
+        """
 
-        label = QLabel("Settings")
-        self.deck_keys = []
+        # Title label
+        title_label = QLabel("Settings")
+        self.menu_layout.addRow(title_label)
 
-        deck_combobox = QComboBox()
-        decks = set([d.name.split("::")[0] for d in mw.col.decks.all_names_and_ids()])
-        for deck in decks:
-            deck_combobox.addItem(deck)
-        deck_combobox.setCurrentIndex(-1)
-
-        selected_keys_label = QLabel(f"Selected Keys: {', '.join(self.deck_keys)}")
-
-        def create_diag(deck, label):
-
-            query = f'"deck:{deck}"'
-            id = mw.col.find_cards(query=query)[0]
-
-            card = mw.col.get_card(id)
-            note = mw.col.get_note(card.nid)
-            selected = MultiSelectDialog.get_items(
-                note.keys(),
-                title="Choose decks to process",
-                parent=self,  # optional parent widget
-            )
-
-            if selected:
-                self.deck_keys = selected  # store the result
-            else:
-                # If nothing selected, maybe keep previous or set default
-                self.deck_keys = [list(note.keys())[0]]  # safe default
-
-            label.setText(f"Selected Keys: {', '.join(self.deck_keys)}")
-
-        deck_combobox.currentTextChanged.connect(
-            lambda deck: create_diag(deck, selected_keys_label)
-        )
-
-        model_combobox = QComboBox()
-        model_combobox.addItem("Gemini 3", "gemini-3-flash-preview")
-        model_combobox.addItem("Gemini 3.1", "gemini-3.1-flash-lite-preview")
-        model_combobox.addItem("Gemini 2", "gemini-2.5-flash")
-
-        vocab_lvl_combobox = QComboBox()
-        for i in range(1, 6):
-            vocab_lvl_combobox.addItem(f"N{i}")
-
-        size_corpus_slider = QSlider(Qt.Orientation.Horizontal, self)
-        size_corpus_slider.setRange(5, 40)
-        size_corpus_slider.setValue(20)
-        size_corpus_label = QLabel(f"Size Corpus: {size_corpus_slider.value()}")
-        size_corpus_slider.valueChanged.connect(
-            lambda value: size_corpus_label.setText(f"Size Corpus: {value}")
-        )
-
-        percentage_corpus_slider = QSlider(Qt.Orientation.Horizontal, self)
-        percentage_corpus_slider.setRange(1, 100)
-        percentage_corpus_slider.setValue(90)
-        percentage_corpus_label = QLabel(
-            f"Percentage Corpus: {percentage_corpus_slider.value() / 100}"
-        )
-        percentage_corpus_slider.valueChanged.connect(
-            lambda value: percentage_corpus_label.setText(
-                f"Percentage Corpus: {percentage_corpus_slider.value() / 100}"
-            )
-        )
-
-        scaling_factor_slider = QSlider(Qt.Orientation.Horizontal, self)
-        scaling_factor_slider.setRange(1, 20)
-        scaling_factor_slider.setValue(10)
-        scaling_factor_label = QLabel(
-            f"Text Scaling Factor: {scaling_factor_slider.value()}"
-        )
-        scaling_factor_slider.valueChanged.connect(
-            lambda value: scaling_factor_label.setText(
-                f"Text Scaling Factor: {scaling_factor_slider.value()}"
-            )
-        )
-
-        apply_button = QPushButton("Apply")
-        apply_button.clicked.connect(
-            lambda x: self.init_app(
-                deck_name=deck_combobox.currentText(),
-                deck_keys=self.deck_keys,
-                model=model_combobox.currentData(),
-                vocab_level=vocab_lvl_combobox.currentText(),
-                batch_size=size_corpus_slider.value(),
-                percentage_selection=percentage_corpus_slider.value() / 100,
-                text_scaling_factor=scaling_factor_slider.value(),
-            )
-        )
-
-        self.menu_layout.addRow(label)
+        # ===== Deck selection =====
         self.menu_layout.addRow(QLabel("Deck"))
-        self.menu_layout.addRow(deck_combobox)
-        self.menu_layout.addRow(selected_keys_label)
+        self.deck_combobox = QComboBox()
+
+        # Get all top‑level deck names (before any "::")
+        all_decks = {d.name.split("::")[0] for d in mw.col.decks.all_names_and_ids()}
+        for deck_name in sorted(all_decks):
+            self.deck_combobox.addItem(deck_name)
+        self.deck_combobox.setCurrentIndex(-1)  # nothing selected initially
+
+        self.menu_layout.addRow(self.deck_combobox)
+
+        # ===== Field selection (shows after deck is chosen) =====
+        self.selected_field_names = []  # will hold the chosen note fields
+        self.selected_fields_label = QLabel("Selected Fields: (none)")
+        self.menu_layout.addRow(self.selected_fields_label)
+
+        # Connect deck change to field selection dialog
+        self.deck_combobox.currentTextChanged.connect(self._on_deck_selected)
+
+        # ===== LLM model selection =====
         self.menu_layout.addRow(QLabel("LLM Model"))
-        self.menu_layout.addRow(model_combobox)
+        self.model_combobox = QComboBox()
+        self.model_combobox.addItem("Gemini 3", "gemini-3-flash-preview")
+        self.model_combobox.addItem("Gemini 3.1", "gemini-3.1-flash-lite-preview")
+        self.model_combobox.addItem("Gemini 2", "gemini-2.5-flash")
+        self.menu_layout.addRow(self.model_combobox)
+
+        # ===== Vocabulary level =====
         self.menu_layout.addRow(QLabel("Level Vocabulary"))
-        self.menu_layout.addRow(vocab_lvl_combobox)
-        self.menu_layout.addRow(size_corpus_label)
-        self.menu_layout.addRow(size_corpus_slider)
-        self.menu_layout.addRow(percentage_corpus_label)
-        self.menu_layout.addRow(percentage_corpus_slider)
-        self.menu_layout.addRow(scaling_factor_label)
-        self.menu_layout.addRow(scaling_factor_slider)
+        self.vocab_level_combobox = QComboBox()
+        for i in range(1, 6):
+            self.vocab_level_combobox.addItem(f"N{i}")
+        self.menu_layout.addRow(self.vocab_level_combobox)
+
+        # ===== Batch size slider =====
+        self.batch_size_slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.batch_size_slider.setRange(5, 40)
+        self.batch_size_slider.setValue(20)
+        self.batch_size_label = QLabel(f"Batch Size: {self.batch_size_slider.value()}")
+        self.batch_size_slider.valueChanged.connect(
+            lambda val: self.batch_size_label.setText(f"Batch Size: {val}")
+        )
+        self.menu_layout.addRow(self.batch_size_label)
+        self.menu_layout.addRow(self.batch_size_slider)
+
+        # ===== Selection percentage slider =====
+        self.selection_percentage_slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.selection_percentage_slider.setRange(1, 100)
+        self.selection_percentage_slider.setValue(90)
+        self.selection_percentage_label = QLabel(
+            f"Selection %: {self.selection_percentage_slider.value() / 100}"
+        )
+        self.selection_percentage_slider.valueChanged.connect(
+            lambda val: self.selection_percentage_label.setText(
+                f"Selection %: {val / 100}"
+            )
+        )
+        self.menu_layout.addRow(self.selection_percentage_label)
+        self.menu_layout.addRow(self.selection_percentage_slider)
+
+        # ===== Text scaling factor slider =====
+        self.text_scaling_slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.text_scaling_slider.setRange(1, 20)
+        self.text_scaling_slider.setValue(10)
+        self.text_scaling_label = QLabel(
+            f"Text Scaling: {self.text_scaling_slider.value()}"
+        )
+        self.text_scaling_slider.valueChanged.connect(
+            lambda val: self.text_scaling_label.setText(f"Text Scaling: {val}")
+        )
+        self.menu_layout.addRow(self.text_scaling_label)
+        self.menu_layout.addRow(self.text_scaling_slider)
+
+        # ===== Apply button =====
+        apply_button = QPushButton("Apply")
+        apply_button.clicked.connect(self._on_apply_clicked)
         self.menu_layout.addRow(apply_button)
+
+    def _on_deck_selected(self, deck_name: str):
+        """
+        Called when the user selects a deck. Opens a multi‑selection dialog
+        showing all fields (note keys) of the first card found in the deck hierarchy.
+        Updates self.selected_field_names and the corresponding label.
+        """
+        if not deck_name:
+            return
+
+        # Search for any card in the deck (including subdecks)
+        query = f'"deck:{deck_name}"'
+        card_ids = mw.col.find_cards(query)
+        if not card_ids:
+            # Try including subdecks explicitly if the above didn't work
+            card_ids = mw.col.find_cards(f'deck:"{deck_name}" OR deck:"{deck_name}::*"')
+        if not card_ids:
+            # No cards at all – show error or leave fields empty
+            self.selected_field_names = []
+            self.selected_fields_label.setText("Selected Fields: (no cards)")
+            return
+
+        # Take the first card's note to get its field names
+        card = mw.col.get_card(card_ids[0])
+        note = mw.col.get_note(card.nid)
+        field_names = list(note.keys())  # all field names of this note type
+
+        # Open multi‑selection dialog
+        selected = MultiSelectDialog.get_items(
+            field_names,
+            title="Choose fields to process",
+            parent=self,
+        )
+
+        if selected:
+            self.selected_field_names = selected
+        else:
+            # Default to the first field if nothing selected
+            self.selected_field_names = [field_names[0]]
+
+        # Update the label
+        self.selected_fields_label.setText(
+            f"Selected Fields: {', '.join(self.selected_field_names)}"
+        )
+
+    def _on_apply_clicked(self):
+        """
+        Triggered by the Apply button. Gathers current settings and calls
+        init_app() to rebuild the tab area with batches for the selected deck.
+        """
+        self.init_app(
+            deck_name=self.deck_combobox.currentText(),
+            field_names=self.selected_field_names,
+            model=self.model_combobox.currentData(),
+            vocab_level=self.vocab_level_combobox.currentText(),
+            batch_size=self.batch_size_slider.value(),
+            selection_ratio=self.selection_percentage_slider.value() / 100,
+            text_scaling=self.text_scaling_slider.value(),
+        )
 
     def init_app(
         self,
         deck_name: str,
-        deck_keys: list[str],
+        field_names: list[str],
         model: str,
         vocab_level: str,
         batch_size: int,
-        percentage_selection: float,
-        text_scaling_factor: int,
+        selection_ratio: float,
+        text_scaling: int,
     ):
+        """
+        (Re)build the tab area with one tab per batch of due cards from the chosen deck.
 
+        For each batch, a tab is created showing the vocabulary words and a button to
+        generate a story. The generation uses the selected AI model and settings.
+
+        Args:
+            deck_name: Name of the Anki deck (including subdecks automatically).
+            field_names: List of note field names to extract from each card.
+            model: Identifier of the AI model to use.
+            vocab_level: String like "N4" for the prompt.
+            batch_size: Number of cards per batch.
+            selection_ratio: Fraction (0..1) of words to be used in the story (passed to prompt generator).
+            text_scaling: Factor to adjust story length (passed to prompt generator).
+        """
+        # Remove old tabs (if any) – the old QTabWidget will be deleted later
         self.tabs.deleteLater()
 
+        # Create a fresh tab widget
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setMovable(True)
         self.app_layout.addWidget(self.tabs)
 
+        # API caller instance (synchronous, but used via background threads)
         api = APICaller()
 
-        due_words = get_due_words(deck_name=deck_name, field_names=deck_keys)
+        # Retrieve all due words from the deck
+        due_words = get_due_words(deck_name=deck_name, field_names=field_names)
 
-        story_theme = ""
-
-        gen_prompt = Prompt(
+        # Prompt generator (builds the text prompt for the AI)
+        prompt_gen = PromptGenerator(
             vocab_level=vocab_level,
-            story_theme=story_theme,
-            scaling_factor=text_scaling_factor,
-            percentage_selection=percentage_selection,
+            story_theme="",
+            scaling_factor=text_scaling,
+            percentage_selection=selection_ratio,
         )
 
-        batch_words = []
-        prompts = []
+        # Split due words into batches and generate a prompt for each batch
+        batch_words_list = []  # list of batches, each batch = list of (kanji, reading) tuples
+        prompt_list = []  # list of corresponding prompts
 
-        for batch_num in range(ceil(len(due_words) / batch_size)):
-            current_batch_words = due_words[
-                batch_num * batch_size : (batch_num + 1) * batch_size
-            ]
-            batch_words.append(current_batch_words)
+        num_batches = ceil(len(due_words) / batch_size)
+        for batch_num in range(num_batches):
+            start = batch_num * batch_size
+            end = (batch_num + 1) * batch_size
+            batch = due_words[start:end]
 
-            prompts.append(gen_prompt.generate(words=current_batch_words))
+            batch_words_list.append(batch)
+            prompt_list.append(prompt_gen.generate(words=batch))
 
-            current_tab = QWidget()
-            layout_tab = QVBoxLayout()
+            # Create a new tab for this batch
+            tab_widget = QWidget()
+            tab_layout = QVBoxLayout()
 
-            editor = QTextEdit()
-            editor.setStyleSheet(EDITOR_SETTING)
-            editor.setReadOnly(True)
-            editor.setFixedHeight(200)
-            editor.setHtml(format_words(current_batch_words))
+            # Editor showing the vocabulary words of this batch
+            words_editor = QTextEdit()
+            words_editor.setStyleSheet(EDITOR_SETTING)  # assumed constant
+            words_editor.setReadOnly(True)
+            words_editor.setFixedHeight(200)
+            words_editor.setHtml(format_words(batch))
 
-            show_hiragana = QCheckBox("Show Hiragana")
+            # Checkbox to toggle furigana display
+            show_hiragana_checkbox = QCheckBox("Show Hiragana")
 
-            prompt_button = QPushButton(f"Verify prompt {batch_num}")
+            # Button to edit the prompt manually
+            edit_prompt_button = QPushButton(f"Edit Prompt {batch_num}")
 
-            def create_prompt_diag(idx_prompt: int, prompts: list[str]) -> None:
-                modified_prompt = PromptDialog.get_items(prompt=prompts[idx_prompt])
-                prompts[idx_prompt] = modified_prompt
-
-            prompt_button.clicked.connect(
+            # Connect prompt edit button – modifies the prompt list in place
+            edit_prompt_button.clicked.connect(
                 partial(
-                    create_prompt_diag,
-                    batch_num,
-                    prompts,
+                    self._on_edit_prompt_clicked,
+                    batch_index=batch_num,
+                    prompt_list=prompt_list,
                 )
             )
 
-            generate_button = QPushButton(f"Generate {batch_num}")
+            # Button to generate the story
+            generate_story_button = QPushButton(f"Generate {batch_num}")
 
-            editor_gen_text = QTextEdit()
-            editor_gen_text.setStyleSheet(EDITOR_SETTING)
-            editor_gen_text.setReadOnly(True)
+            # Editor that will display the generated story
+            story_editor = QTextEdit()
+            story_editor.setStyleSheet(EDITOR_SETTING)
+            story_editor.setReadOnly(True)
 
-            generate_button.clicked.connect(
+            # Connect generate button – launches background API call
+            generate_story_button.clicked.connect(
                 partial(
                     self.call_and_generate_text,
-                    batch_num,
-                    batch_words,
-                    prompts,
-                    model,
-                    show_hiragana,
-                    editor_gen_text,
-                    api,
+                    batch_index=batch_num,
+                    batch_words_list=batch_words_list,
+                    prompt_list=prompt_list,
+                    model=model,
+                    show_hiragana_checkbox=show_hiragana_checkbox,
+                    story_editor=story_editor,
+                    api_client=api,
                 )
             )
 
-            layout_tab.addWidget(QLabel(f"words {batch_num}"))
-            layout_tab.addWidget(editor)
-            layout_tab.addWidget(QLabel("Generated text:"))
-            layout_tab.addWidget(show_hiragana)
-            layout_tab.addWidget(prompt_button)
-            layout_tab.addWidget(generate_button)
-            layout_tab.addWidget(editor_gen_text)
+            # Assemble tab layout
+            tab_layout.addWidget(QLabel(f"Batch {batch_num}"))
+            tab_layout.addWidget(words_editor)
+            tab_layout.addWidget(QLabel("Generated story:"))
+            tab_layout.addWidget(show_hiragana_checkbox)
+            tab_layout.addWidget(edit_prompt_button)
+            tab_layout.addWidget(generate_story_button)
+            tab_layout.addWidget(story_editor)
 
-            current_tab.setLayout(layout_tab)
-            self.tabs.addTab(current_tab, f"{batch_num}")
+            tab_widget.setLayout(tab_layout)
+            self.tabs.addTab(tab_widget, f"{batch_num}")
+
+    def _on_edit_prompt_clicked(self, batch_index: int, prompt_list: list[str]):
+        """
+        Open a dialog to edit the prompt for a specific batch and update the list in place.
+        """
+        modified_prompt = PromptDialog.get_items(prompt=prompt_list[batch_index])
+        if modified_prompt:
+            prompt_list[batch_index] = modified_prompt
 
     def call_and_generate_text(
         self,
-        idx_batch: int,
-        batch_words: list[list[tuple[str, str]]],
-        prompts: list[str],
+        batch_index: int,
+        batch_words_list: list[list[tuple[str, str]]],
+        prompt_list: list[str],
         model: str,
-        show_hiragana: QCheckBox,
-        editor_gen_text: QTextEdit,
-        api: APICaller,
+        show_hiragana_checkbox: QCheckBox,
+        story_editor: QTextEdit,
+        api_client: APICaller,
     ) -> None:
-        words = batch_words[idx_batch]
-        prompt = prompts[idx_batch]
-        kanjis = [kanji for kanji, reading in words]
+        """
+        Generate a story for a specific batch of vocabulary.
+
+        This method extracts the word batch and prompt corresponding to `batch_index`,
+        then uses Anki's QueryOp to call the AI API in the background without blocking the UI.
+        On success, `on_generation_done` updates the provided editor widget;
+        on failure, `on_generation_error` displays the error.
+
+        Args:
+            batch_index: Index of the current batch (used to select from parallel lists).
+            batch_words_list: List of batches, each batch being a list of (kanji, reading) tuples.
+            prompt_list: List of prompt strings corresponding to each batch.
+            model: AI model identifier to use (e.g., "gemini-2.0-flash").
+            show_hiragana_checkbox: Checkbox controlling whether furigana should be displayed.
+            editor_widget: QTextEdit where the generated story will be shown.
+            api_client: Instance of APICaller used to make the API request.
+        """
+        if batch_index < 0 or batch_index >= len(batch_words_list):
+            raise IndexError(
+                f"batch_index {batch_index} out of range for batch_words_list"
+            )
+
+        current_batch = batch_words_list[batch_index]
+        current_prompt = prompt_list[batch_index]
+        kanjis = [kanji for kanji, reading in current_batch]
 
         op = QueryOp(
             parent=self,
-            op=lambda col: api.call(kanjis, prompt, model),
+            op=lambda col: api_client.call(kanjis, current_prompt, model),
             success=lambda text: self.on_generation_done(
-                text, show_hiragana, editor_gen_text
+                text, show_hiragana_checkbox, story_editor
             ),
         )
         op.failure(
             failure=lambda err: self.on_generation_error(
-                err, show_hiragana, editor_gen_text
+                err, show_hiragana_checkbox, story_editor
             )
         )
 
         op.with_progress().run_in_background()
 
-    def on_generation_done(self, text, show_hiragana, editor):
-        """This runs in the main thread - safe to update UI"""
-        parsed_text = parse_sections(text)
-        story = parsed_text["STORY"]
-        if not show_hiragana.isChecked():
-            story = remove_furigana(story)
+    def on_generation_done(
+        self,
+        raw_response: str,
+        show_hiragana_checkbox: QCheckBox,
+        story_editor: QTextEdit,
+    ) -> None:
+        """
+        Handle successful API response
 
-        story = story.replace("\n\n", "<br><br>")
+        Args:
+            raw_response: Full text returned by the API (should contain ##STORY## section).
+            show_hiragana_checkbox: Checkbox controlling furigana visibility.
+            story_editor: QTextEdit where the story will be set as HTML.
+        """
+        # Extract the story section from the structured API output
+        parsed = parse_sections(raw_response)
+        story_text = parsed.get("STORY", "")
 
-        editor.setHtml(story)
+        if not show_hiragana_checkbox.isChecked():
+            story_text = remove_furigana(story_text)
 
-    def on_generation_error(self, err, show_hiragana, editor):
-        """This runs in the main thread - safe to update UI"""
+        story_text = story_text.replace("\n\n", "<br><br>")
 
-        editor.setHtml(err)
+        story_editor.setHtml(story_text)
 
+    def on_generation_error(
+        self,
+        error: Exception,
+        show_hiragana_checkbox: QCheckBox,  # kept for signature consistency (unused)
+        story_editor: QTextEdit,
+    ) -> None:
+        """
+        Handle API error: display the error message in the editor.
 
-#             batch_low_percent = int(len(batch_words) * 0.7) + 1
-#             batch_up_percent = int(len(batch_words) * 0.8) + 1
-#             prompt = f"""# SYSTEM PROMPT
-# You are an experienced Japanese teacher who believes in immersion through reading. You also write short, engaging stories for learners ({vocab_level} level). Your stories are grammatically simple, use furigana for all kanji, and avoid gender/occupational stereotypes.
-#
-# # USER PROMPT
-# I am an {vocab_level} learner using Anki. Today I have these {len(batch_words)} vocabulary cards.
-# **I do NOT expect you to use all of them.** Instead, please:
-#
-# 0. **Choose a fairy tail theme for an engaging story** then use this theme when you write the story.
-# 1. **Select {batch_low_percent}-{batch_up_percent} words** from the list that can naturally appear together in one short story (e.g., around a single theme or location).
-# 2. **Write a {batch_low_percent * text_scaling_factor}-{batch_up_percent * text_scaling_factor} word story** using those selected words.
-# 3. The story must be **easy and engaging to read**, with **{vocab_level}‑level grammar** and **short sentences**.
-# 4. Use the writing style of graded books such as tadoku graded books, satory reader and genki japanese reader.
-# 5. **Furigana format**: For every kanji, write the reading in parentheses **immediately after** the kanji.
-# ✅ Example: 私(わたし)は 昨日(きのう) 友達(ともだち)と 公園(こうえん)へ 行(い)きました。
-# ❌ Wrong: only adding readings for target words, or putting readings only once.
-#
-# ---
-#
-# ### Vocabulary List (select {batch_low_percent}-{batch_up_percent} from here)
-# {batch_words[:]}
-# ---
-#
-# ### Output Format – STRICT REQUIREMENTS
-#
-# Your entire response must consist **exactly** of the three sections below, in this order, with **no additional text, explanations, greetings, or commentary**.
-#
-# 1. **`##SELECTED_WORDS##`**
-# - One word per line, **only** the kanji followed immediately by its reading in parentheses.
-# - Do **not** add numbers, bullet points, dashes, or descriptions.
-# - Example:
-#  ```
-#  景色(けしき)
-#  細い(ほそい)
-#  ```
-#
-# 2. **`##THEME##`**
-# - A single line describing the theme or setting of the story.
-# - Example: `池のほとりの小さな謎`
-#
-# 3. **`##STORY##`**
-# - The full story, with furigana for **all** kanji as specified in rule 5.
-# - The story must be written as plain text, with normal spacing and punctuation.
-# - Do **not** add extra line breaks inside the story unless they are part of the paragraph structure.
-#
-# ---
-#
-# ### Before writing the story, you will still:
-# - **Select the words** from the list ({batch_low_percent}-{batch_up_percent} of them) – but you **do not** need to explain your choice. The selection is shown only in the `##SELECTED_WORDS##` section.
-# - **Write the story** under the `##STORY##` heading.
-#
-# Now, generate your response following the **Output Format** exactly."""
+        Args:
+            error_message: The error string returned by the API or exception.
+            show_hiragana_checkbox: Unused checkbox (kept for consistent callback signature).
+            story_editor: QTextEdit where the error will be shown.
+        """
+        # Show the error directly in the editor (as plain text wrapped in <pre> or similar)
+        story_editor.setHtml(f"<pre style='color: red;'>{error.message}</pre>")

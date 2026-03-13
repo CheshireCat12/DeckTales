@@ -257,6 +257,7 @@ class DecktalesWindow(QWidget):
 
         model_combobox = QComboBox()
         model_combobox.addItem("Gemini 3", "gemini-3-flash-preview")
+        model_combobox.addItem("Gemini 3.1", "gemini-3.1-flash-lite-preview")
         model_combobox.addItem("Gemini 2", "gemini-2.5-flash")
 
         vocab_lvl_combobox = QComboBox()

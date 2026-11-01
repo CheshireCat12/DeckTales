@@ -1,37 +1,53 @@
+"""Client for the Gemini API, with an in-memory cache of generated stories."""
+
 import os
 import sys
 from time import sleep
 
-# import all of the Qt GUI library
-
-# Add the 'vendor' folder to Python's search path
+# Add the 'vendor' folder to Python's search path so the bundled dependencies are found
 addon_dir = os.path.dirname(__file__)
 vendor_dir = os.path.join(addon_dir, "vendor")
 if vendor_dir not in sys.path:
     sys.path.insert(0, vendor_dir)
 
-# If google was already imported, remove it from cache
+# If google was already imported, remove it from cache so that `google.genai`
+# is looked up in the vendor folder rather than in the previously loaded package
 if "google" in sys.modules:
     del sys.modules["google"]
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
 
 from decktales.utils import DEBUG
 
 
 class APICaller:
-    def __init__(self):
-        self.cach_data = {}
+    """Sends prompts to the Gemini API and remembers the response to each request."""
 
-    def call(self, words: list[str], prompt: str, model: str) -> str:
-        words_hash = hash(tuple(words))
+    def __init__(self):
+        self.story_cache = {}  # maps (prompt, model) to the raw API response
+
+    def call(self, prompt: str, model: str) -> str:
+        """
+        Return the raw API response, calling the API only on a cache miss.
+
+        Editing the prompt therefore produces a new story, while sending the
+        same prompt to the same model again returns the stored one.
+
+        Args:
+            prompt: Full prompt to send to the API.
+            model: Identifier of the AI model to use.
+
+        Returns:
+            The raw response text, in the ##SECTION## format described in prompt.py.
+        """
+        cache_key = (prompt, model)
 
         # API call if not cached yet
-        if words_hash not in self.cach_data:
+        if cache_key not in self.story_cache:
             if DEBUG:
-                output = """##SELECTED_WORDS##
+                # Canned response: lets the UI be tested without using any API quota
+                debug_response = """##SELECTED_WORDS##
                 選ぶ(えらぶ)
                 景色(けしき)
                 年寄り(としより)
@@ -74,24 +90,22 @@ class APICaller:
                 年寄り(としより)は顔(かお)を赤(あか)くしました。「ごめんなさい。孫(まご)が貸す(かす)と言(い)った道具(どうぐ)で、どれが一番(いちばん)魚(さかな)を釣(つ)るか比べ(くらべ)ていたのです。この場所(ばしょ)しか選ぶ(えらぶ)ことができませんでした。」
 
                 ユキはそれが酷い(ひどい)悪戯(いたずら)ではなかったことにホッとしました。橋(はし)が壊れる(こわれる)のは残念(ざんねん)ですが、原因(げんいん)はただの競争(きょうそう)でした。"""
-                self.cach_data[words_hash] = output
-                sleep(3)
+                self.story_cache[cache_key] = debug_response
+                sleep(3)  # simulate network latency
             else:
                 print("API call")
 
+                # Load the API key from the add-on's .env file into the environment
                 load_dotenv()
 
-                # The client gets the API key from the environment variable `GEMINI_API_KEY`.
+                # The client reads the API key from `GOOGLE_API_KEY` or `GEMINI_API_KEY`.
                 client = genai.Client()
-
-                model_temperature = 1.1
 
                 response = client.models.generate_content(
                     model=model,
                     contents=prompt,
-                    config=types.GenerateContentConfig(temperature=model_temperature),
                 )
 
-                self.cach_data[words_hash] = response.text
+                self.story_cache[cache_key] = response.text
 
-        return self.cach_data[words_hash]
+        return self.story_cache[cache_key]

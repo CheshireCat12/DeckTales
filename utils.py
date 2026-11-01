@@ -1,17 +1,179 @@
+"""Helpers for reading Anki cards and parsing AI responses, plus reusable Qt dialogs."""
+
 import re
+from pathlib import Path
 
 from aqt import mw
 from aqt.qt import (
     QAbstractItemView,
     QDialog,
     QDialogButtonBox,
+    QLabel,
     QListWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+# When True, APICaller returns a canned response instead of calling the real API
 DEBUG = False
+
+# Style for text editors that display Japanese: lists fonts with good CJK coverage.
+EDITOR_STYLESHEET = """
+    QTextEdit {
+        font-family: "Hiragino Mincho ProN", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans CJK JP", sans-serif;
+        font-size: 18pt;
+    }
+"""
+
+# Style for the whole window. Colors come from palette() so that it follows
+# Anki's light or dark theme instead of fixing colors of its own.
+APP_STYLESHEET = """
+    QLabel#panelTitle {
+        font-size: 18pt;
+        font-weight: 600;
+    }
+    QLabel#settingTitle {
+        font-weight: 600;
+    }
+    QLabel#settingValue {
+        color: palette(link);
+        font-weight: 600;
+    }
+    QLabel#settingHelp {
+        color: palette(placeholder-text);
+        font-size: 9pt;
+    }
+    QLabel#emptyState {
+        color: palette(placeholder-text);
+        font-size: 13pt;
+        border: 1px dashed palette(mid);
+        border-radius: 12px;
+        padding: 24px;
+    }
+    QFrame#settingCard {
+        background: palette(base);
+        border: 1px solid palette(mid);
+        border-radius: 10px;
+    }
+    QScrollArea {
+        border: none;
+        background: transparent;
+    }
+    QWidget#settingsCards {
+        background: transparent;
+    }
+    QTextEdit, QListWidget {
+        background: palette(base);
+        border: 1px solid palette(mid);
+        border-radius: 8px;
+        padding: 6px;
+    }
+    QComboBox {
+        background: palette(button);
+        border: 1px solid palette(mid);
+        border-radius: 8px;
+        padding: 5px 10px;
+    }
+    QComboBox:hover {
+        border-color: palette(highlight);
+    }
+    QComboBox::drop-down {
+        background: transparent;
+        border: none;
+        width: 24px;
+    }
+    QPushButton {
+        background: palette(button);
+        border: 1px solid palette(mid);
+        border-radius: 8px;
+        padding: 7px 14px;
+    }
+    QPushButton:hover {
+        border-color: palette(highlight);
+    }
+    QPushButton#toggleButton:checked {
+        background: palette(highlight);
+        border-color: palette(highlight);
+        color: palette(highlighted-text);
+    }
+    QPushButton#primaryButton {
+        background: palette(highlight);
+        border: none;
+        color: palette(highlighted-text);
+        font-weight: 600;
+        padding: 8px 16px;
+    }
+    QPushButton#primaryButton:disabled {
+        background: palette(mid);
+        color: palette(placeholder-text);
+    }
+    QSlider::groove:horizontal {
+        background: palette(mid);
+        border-radius: 2px;
+        height: 4px;
+    }
+    QSlider::sub-page:horizontal {
+        background: palette(highlight);
+        border-radius: 2px;
+    }
+    QSlider::handle:horizontal {
+        background: palette(highlight);
+        border-radius: 8px;
+        margin: -6px 0;
+        width: 16px;
+    }
+    QScrollBar:vertical {
+        background: transparent;
+        width: 8px;
+    }
+    QScrollBar::handle:vertical {
+        background: palette(mid);
+        border-radius: 4px;
+        min-height: 24px;
+    }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+        height: 0;
+    }
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+        background: transparent;
+    }
+    QTabWidget::pane {
+        background: palette(base);
+        border: 1px solid palette(mid);
+        border-radius: 10px;
+        top: 10px;  /* gap between the tab bar and the tab's content */
+    }
+    QTabBar::tab {
+        background: transparent;
+        border-bottom: 2px solid transparent;
+        padding: 8px 16px;
+    }
+    QTabBar::tab:selected {
+        border-bottom-color: palette(highlight);
+        color: palette(link);
+        font-weight: 600;
+    }
+"""
+
+# Added separately because it needs the add-on's location. The arrow is mid-grey
+# so that one image can be read on both light and dark themes.
+CHEVRON_PATH = (Path(__file__).parent / "assets" / "chevron-down.svg").as_posix()
+APP_STYLESHEET += f"""
+    QComboBox::down-arrow {{
+        height: 12px;
+        image: url("{CHEVRON_PATH}");
+        width: 12px;
+    }}
+"""
+
+
+def make_help_label(text: str) -> QLabel:
+    """Return a small, word-wrapped label explaining what a control is for."""
+    help_label = QLabel(text)
+    help_label.setObjectName("settingHelp")
+    help_label.setWordWrap(True)
+    return help_label
 
 
 def remove_furigana(text: str) -> str:
@@ -26,7 +188,7 @@ def clean_pitch(word: str) -> str:
     return cleaned_word
 
 
-def get_due_words(deck_name: str, field_names: list[str]) -> list[tuple[str, str]]:
+def get_due_words(deck_name: str, field_names: list[str]) -> list[tuple[str, ...]]:
     """
     Retrieve all due cards from a deck and return the processed content of specified fields.
 
@@ -50,26 +212,43 @@ def get_due_words(deck_name: str, field_names: list[str]) -> list[tuple[str, str
     card_ids = mw.col.find_cards(f'"deck:{deck_name}" is:due')
 
     due_words = []
-    for cid in card_ids:
-        card = mw.col.get_card(cid)
+    for card_id in card_ids:
+        card = mw.col.get_card(card_id)
         note = mw.col.get_note(card.nid)
 
         # Extract requested fields and clean them
-        current_word = [clean_pitch(note[field]) for field in field_names]
-        due_words.append(tuple(current_word))
+        field_values = [clean_pitch(note[field_name]) for field_name in field_names]
+        due_words.append(tuple(field_values))
 
     return due_words
 
 
-def format_words(words: list[tuple[str, str]]) -> str:
-    # <b>{kanji}</b> <span style='font-size: smaller;'>({reading})</span>
-    return "".join(
-        [f"{w[0]}<span style='font-size: 12pt;'>({w[1]})</span>, " for w in words]
-    )[:-2]
+def format_word(word_fields: tuple[str, ...]) -> str:
+    """
+    Format one word as HTML, with its reading in smaller text if it has one.
+
+    The first value is the word and the second, if present, is its reading.
+    Any further values are not displayed.
+    """
+    word = word_fields[0]
+    reading = word_fields[1] if len(word_fields) > 1 else ""
+    if not reading:
+        return word
+    return f"{word}<span style='font-size: 12pt;'>({reading})</span>"
+
+
+def format_words(words: list[tuple[str, ...]]) -> str:
+    """Format words as a comma-separated HTML string."""
+    return ", ".join(format_word(word_fields) for word_fields in words)
 
 
 def parse_sections(text: str) -> dict:
-    """Parse your ##SECTION## delimited format."""
+    """
+    Parse the ##SECTION## delimited format requested from the AI (see prompt.py).
+
+    Returns a dict with the raw text of each section (empty if missing), plus
+    "SELECTED_WORDS_PARSED": the selected words as (word, reading) tuples.
+    """
 
     sections = {
         "VAL": "",
@@ -79,12 +258,12 @@ def parse_sections(text: str) -> dict:
         "SELECTED_WORDS_PARSED": [],
     }
 
-    # Extract each section using regex
-    for section in sections.keys():
-        pattern = rf"##{section}##\s*(.*?)(?=##|$)"
+    # Extract each section using regex: a section ends at the next "##" or at the end of the text
+    for section_name in sections.keys():
+        pattern = rf"##{section_name}##\s*(.*?)(?=##|$)"
         match = re.search(pattern, text, re.DOTALL)
         if match:
-            sections[section] = match.group(1).strip()
+            sections[section_name] = match.group(1).strip()
 
     # Parse selected words into list of tuples
     words = []
@@ -112,7 +291,9 @@ class MultiSelectDialog(QDialog):
     Returns a list of selected strings when accepted.
     """
 
-    def __init__(self, items, title="Select Items", parent: QWidget = None):
+    def __init__(
+        self, items, title="Select Items", parent: QWidget = None, help_text: str = ""
+    ):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)  # Block interaction with parent window
@@ -120,6 +301,9 @@ class MultiSelectDialog(QDialog):
 
         # Main layout
         layout = QVBoxLayout(self)
+
+        if help_text:
+            layout.addWidget(make_help_label(help_text))
 
         # List widget with multi‑selection enabled
         self.list_widget = QListWidget()
@@ -142,51 +326,62 @@ class MultiSelectDialog(QDialog):
         return [item.text() for item in self.list_widget.selectedItems()]
 
     @staticmethod
-    def get_items(items, title="Select Items", parent=None):
+    def get_items(items, title="Select Items", parent=None, help_text=""):
         """
         Convenience static method: create, show, and return selected items.
         Returns a list of strings (empty if cancelled).
         """
-        dialog = MultiSelectDialog(items, title, parent)
+        dialog = MultiSelectDialog(items, title, parent, help_text)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             return dialog.get_selected_items()
         return []
 
 
 class PromptDialog(QDialog):
+    """A dialog that lets the user view and edit a prompt before it is sent to the AI."""
+
     def __init__(self, prompt: str):
         super().__init__()
 
         self.prompt = prompt
 
         self.setWindowTitle("Prompt")
+        self.setStyleSheet(APP_STYLESHEET)
+        self.resize(760, 600)
 
-        QBtn = (
+        standard_buttons = (
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
 
-        self.buttonBox = QDialogButtonBox(QBtn)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
+        self.button_box = QDialogButtonBox(standard_buttons)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
 
         layout = QVBoxLayout()
 
-        self.message = QTextEdit()
-        self.message.setStyleSheet(EDITOR_SETTING)
-        self.message.setPlainText(self.prompt)
+        self.prompt_editor = QTextEdit()
+        self.prompt_editor.setStyleSheet(EDITOR_STYLESHEET)
+        self.prompt_editor.setPlainText(self.prompt)
 
-        layout.addWidget(self.message)
-        layout.addWidget(self.buttonBox)
+        layout.addWidget(
+            make_help_label(
+                "These instructions are sent to the model for this batch. Keep the "
+                "##STORY## section in the requested output, as the story is read from it."
+            )
+        )
+        layout.addWidget(self.prompt_editor)
+        layout.addWidget(self.button_box)
         self.setLayout(layout)
 
     def get_prompt(self) -> str:
-        return self.message.toPlainText()
+        """Return the current text of the editor."""
+        return self.prompt_editor.toPlainText()
 
     @staticmethod
     def get_items(prompt: str) -> str:
         """
         Convenience static method: create, show, and return prompt.
-        Returns a modify prompt strings (unchanged if cancelled).
+        Returns the modified prompt string (unchanged if cancelled).
         """
         dialog = PromptDialog(prompt=prompt)
         if dialog.exec() == QDialog.DialogCode.Accepted:

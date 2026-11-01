@@ -1,0 +1,18 @@
+# Copy to ~/.config/decktales/config.toml and edit.
+
+[anki]
+deck = "Japanese"              # includes its subdecks
+fields = ["Kanji", "Reading"]  # the word first, then its reading if you have one
+
+[story]
+model = "gemini-3.8-flash"
+vocab_level = "N4"             # N5 (easiest) to N1 (hardest)
+batch_size = 20                # cards per story
+selection_ratio = 0.9          # share of each batch the story should use
+story_length_factor = 10       # target story length, in words per card
+max_cards = 60                 # daily limit, which also limits Gemini requests
+show_furigana = true           # false removes the readings from the email
+
+[email]
+from = "you@gmail.com"         # the Gmail account that the app password belongs to
+to = "you@gmail.com"

@@ -1,0 +1,6 @@
+[Unit]
+Description=Email today's DeckTales stories
+
+[Service]
+Type=oneshot
+ExecStart=%h/decktales/daily/.venv/bin/python %h/decktales/daily/daily_stories.py run

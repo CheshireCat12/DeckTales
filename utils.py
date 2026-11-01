@@ -1,6 +1,5 @@
 """Helpers for reading Anki cards and parsing AI responses, plus reusable Qt dialogs."""
 
-import re
 from pathlib import Path
 
 from aqt import mw
@@ -13,6 +12,14 @@ from aqt.qt import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+)
+
+# remove_furigana and parse_sections are imported by other add-on modules from here
+from decktales.core import (  # noqa: F401
+    clean_pitch,
+    collect_due_words,
+    parse_sections,
+    remove_furigana,
 )
 
 # When True, APICaller returns a canned response instead of calling the real API
@@ -176,18 +183,6 @@ def make_help_label(text: str) -> QLabel:
     return help_label
 
 
-def remove_furigana(text: str) -> str:
-    """Remove all furigana readings enclosed in parentheses, e.g., '酷い(ひどい)' → '酷い'."""
-    return re.sub(r"\([^)]+\)", "", text)
-
-
-def clean_pitch(word: str) -> str:
-    """Remove the pitch accent symbols."""
-    cleaned_word = re.sub(r"[ꜛꜜ]", "", word)
-
-    return cleaned_word
-
-
 def get_due_words(deck_name: str, field_names: list[str]) -> list[tuple[str, ...]]:
     """
     Retrieve all due cards from a deck and return the processed content of specified fields.
@@ -208,19 +203,7 @@ def get_due_words(deck_name: str, field_names: list[str]) -> list[tuple[str, ...
         >>> get_due_words("Japanese::Vocabulary", ["Expression", "Reading"])
         [("勉強", "べんきょう"), ("食べる", "たべる")]
     """
-    # Search for all due cards in the deck (including subdecks)
-    card_ids = mw.col.find_cards(f'"deck:{deck_name}" is:due')
-
-    due_words = []
-    for card_id in card_ids:
-        card = mw.col.get_card(card_id)
-        note = mw.col.get_note(card.nid)
-
-        # Extract requested fields and clean them
-        field_values = [clean_pitch(note[field_name]) for field_name in field_names]
-        due_words.append(tuple(field_values))
-
-    return due_words
+    return collect_due_words(mw.col, deck_name, field_names)
 
 
 def format_word(word_fields: tuple[str, ...]) -> str:
@@ -240,44 +223,6 @@ def format_word(word_fields: tuple[str, ...]) -> str:
 def format_words(words: list[tuple[str, ...]]) -> str:
     """Format words as a comma-separated HTML string."""
     return ", ".join(format_word(word_fields) for word_fields in words)
-
-
-def parse_sections(text: str) -> dict:
-    """
-    Parse the ##SECTION## delimited format requested from the AI (see prompt.py).
-
-    Returns a dict with the raw text of each section (empty if missing), plus
-    "SELECTED_WORDS_PARSED": the selected words as (word, reading) tuples.
-    """
-
-    sections = {
-        "VAL": "",
-        "SELECTED_WORDS": "",
-        "THEME": "",
-        "STORY": "",
-        "SELECTED_WORDS_PARSED": [],
-    }
-
-    # Extract each section using regex: a section ends at the next "##" or at the end of the text
-    for section_name in sections.keys():
-        pattern = rf"##{section_name}##\s*(.*?)(?=##|$)"
-        match = re.search(pattern, text, re.DOTALL)
-        if match:
-            sections[section_name] = match.group(1).strip()
-
-    # Parse selected words into list of tuples
-    words = []
-    for line in sections["SELECTED_WORDS"].split("\n"):
-        line = line.strip()
-        if line:
-            # Match pattern: 景色(けしき)
-            word_match = re.match(r"^(.+?)\((.+?)\)$", line)
-            if word_match:
-                words.append((word_match.group(1), word_match.group(2)))
-
-    sections["SELECTED_WORDS_PARSED"] = words
-
-    return sections
 
 
 ###########################

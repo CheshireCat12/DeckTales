@@ -1,0 +1,93 @@
+"""
+Logic shared by the Anki add-on and the daily job in daily/.
+
+The daily job runs without desktop Anki, so this module must not import aqt.
+"""
+
+import re
+
+
+def remove_furigana(text: str) -> str:
+    """Remove all furigana readings enclosed in parentheses, e.g., '酷い(ひどい)' → '酷い'."""
+    return re.sub(r"\([^)]+\)", "", text)
+
+
+def clean_pitch(word: str) -> str:
+    """Remove the pitch accent symbols."""
+    cleaned_word = re.sub(r"[ꜛꜜ]", "", word)
+
+    return cleaned_word
+
+
+def collect_due_words(col, deck_name: str, field_names: list[str]) -> list[tuple[str, ...]]:
+    """
+    Retrieve all due cards from a deck and return the processed content of specified fields.
+
+    For each due card in the given deck, the corresponding note is fetched and the values
+    of the fields listed in `field_names` are extracted, cleaned with `clean_pitch()`,
+    and returned as a tuple. The result is a list of such tuples (one per due card).
+
+    Args:
+        col: The open Anki collection.
+        deck_name: Name of the deck (including subdecks automatically via Anki's search syntax).
+        field_names: List of field names (e.g., ["Front", "Back"]) whose content should be returned.
+
+    Returns:
+        A list of tuples, where each tuple contains the cleaned values of the requested fields
+        for a single due card, in the same order as `field_names`.
+
+    Example:
+        >>> collect_due_words(col, "Japanese::Vocabulary", ["Expression", "Reading"])
+        [("勉強", "べんきょう"), ("食べる", "たべる")]
+    """
+    # Search for all due cards in the deck (including subdecks)
+    card_ids = col.find_cards(f'"deck:{deck_name}" is:due')
+
+    due_words = []
+    for card_id in card_ids:
+        card = col.get_card(card_id)
+        note = col.get_note(card.nid)
+
+        # Extract requested fields and clean them
+        field_values = [clean_pitch(note[field_name]) for field_name in field_names]
+        due_words.append(tuple(field_values))
+
+    return due_words
+
+
+def parse_sections(text: str) -> dict:
+    """
+    Parse the ##SECTION## delimited format requested from the AI (see prompt.py).
+
+    Returns a dict with the raw text of each section (empty if missing), plus
+    "SELECTED_WORDS_PARSED": the selected words as (word, reading) tuples.
+    """
+
+    sections = {
+        "VAL": "",
+        "SELECTED_WORDS": "",
+        "THEME": "",
+        "STORY": "",
+        "SELECTED_WORDS_PARSED": [],
+    }
+
+    # Extract each section using regex: a section ends at the next "##" or at the end of the text
+    for section_name in sections.keys():
+        pattern = rf"##{section_name}##\s*(.*?)(?=##|$)"
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            sections[section_name] = match.group(1).strip()
+
+    # Parse selected words into list of tuples
+    words = []
+    for line in sections["SELECTED_WORDS"].split("\n"):
+        line = line.strip()
+        if line:
+            # Match pattern: 景色(けしき)
+            word_match = re.match(r"^(.+?)\((.+?)\)$", line)
+            if word_match:
+                words.append((word_match.group(1), word_match.group(2)))
+
+    sections["SELECTED_WORDS_PARSED"] = words
+
+    return sections

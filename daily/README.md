@@ -17,6 +17,11 @@ These steps assume a 64-bit OS and that you run them as your normal user.
    rsync -a --exclude .venv core.py prompt.py daily pi@raspberrypi:~/decktales/
    ```
 
+   ```sh
+   git clone https://github.com/CheshireCat12/DeckTales.git decktales -b raspberry
+   ```
+   
+
 2. **Install it on the Pi:**
 
    ```sh
